@@ -212,7 +212,7 @@ def generate_ontology():
         logger.info(f"文本提取完成，共 {len(all_text)} 字符")
         
         # 生成本体
-        logger.info("调用 LLM 生成本体定义...")
+        logger.info(f"调用 LLM 生成本体定义... (Azure={Config.use_azure_openai()})")
         generator = OntologyGenerator()
         ontology = generator.generate(
             document_texts=document_texts,
@@ -247,6 +247,8 @@ def generate_ontology():
         })
         
     except Exception as e:
+        logger.error(f"Ontology generation failed: {str(e)}")
+        logger.debug(traceback.format_exc())
         return jsonify({
             "success": False,
             "error": str(e),

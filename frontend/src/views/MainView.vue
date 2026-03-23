@@ -189,8 +189,8 @@ const initProject = async () => {
 const handleNewProject = async () => {
   const pending = getPendingUpload()
   if (!pending.isPending || pending.files.length === 0) {
-    error.value = 'No pending files found.'
-    addLog('Error: No pending files found for new project.')
+    addLog('No pending files found, redirecting to home.')
+    router.replace({ name: 'Home' })
     return
   }
   

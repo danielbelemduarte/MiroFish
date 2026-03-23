@@ -56,8 +56,10 @@ export const requestWithRetry = async (requestFn, maxRetries = 3, delay = 1000) 
     try {
       return await requestFn()
     } catch (error) {
+      // Don't retry server errors (5xx) - they won't resolve by retrying
+      if (error.response && error.response.status >= 500) throw error
       if (i === maxRetries - 1) throw error
-      
+
       console.warn(`Request failed, retrying (${i + 1}/${maxRetries})...`)
       await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)))
     }

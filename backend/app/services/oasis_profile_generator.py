@@ -15,11 +15,11 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from openai import OpenAI
 from zep_cloud.client import Zep
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.llm_client import create_openai_client, get_model_name, _is_reasoning_model
 from .zep_entity_reader import EntityNode, ZepEntityReader
 
 logger = get_logger('mirofish.oasis_profile')
@@ -185,16 +185,19 @@ class OasisProfileGenerator:
         zep_api_key: Optional[str] = None,
         graph_id: Optional[str] = None
     ):
-        self.api_key = api_key or Config.LLM_API_KEY
-        self.base_url = base_url or Config.LLM_BASE_URL
-        self.model_name = model_name or Config.LLM_MODEL_NAME
-        
+        self.model_name = get_model_name(model_name)
+
+        if Config.use_azure_openai():
+            self.api_key = api_key or Config.AZURE_OPENAI_API_KEY
+        else:
+            self.api_key = api_key or Config.LLM_API_KEY
+
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
-        
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url
+
+        self.client = create_openai_client(
+            api_key=api_key,
+            base_url=base_url,
         )
         
         # Zep客户端用于检索丰富上下文
@@ -526,16 +529,17 @@ class OasisProfileGenerator:
         
         for attempt in range(max_attempts):
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=[
+                create_kwargs = {
+                    "model": self.model_name,
+                    "messages": [
                         {"role": "system", "content": self._get_system_prompt(is_individual)},
                         {"role": "user", "content": prompt}
                     ],
-                    response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1)  # 每次重试降低温度
-                    # 不设置max_tokens，让LLM自由发挥
-                )
+                    "response_format": {"type": "json_object"},
+                }
+                if not _is_reasoning_model(self.model_name):
+                    create_kwargs["temperature"] = 0.7 - (attempt * 0.1)
+                response = self.client.chat.completions.create(**create_kwargs)
                 
                 content = response.choices[0].message.content
                 

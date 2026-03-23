@@ -31,6 +31,17 @@ class Config:
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
+
+    # Azure OpenAI配置（可选，设置AZURE_OPENAI_ENDPOINT后自动启用）
+    AZURE_OPENAI_API_KEY = os.environ.get('AZURE_OPENAI_API_KEY')
+    AZURE_OPENAI_ENDPOINT = os.environ.get('AZURE_OPENAI_ENDPOINT')
+    AZURE_OPENAI_API_VERSION = os.environ.get('AZURE_OPENAI_API_VERSION', '2024-12-01-preview')
+    AZURE_OPENAI_DEPLOYMENT = os.environ.get('AZURE_OPENAI_DEPLOYMENT')
+
+    @classmethod
+    def use_azure_openai(cls) -> bool:
+        """检查是否使用Azure OpenAI"""
+        return bool(cls.AZURE_OPENAI_ENDPOINT)
     
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')

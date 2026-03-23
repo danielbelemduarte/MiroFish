@@ -449,18 +449,37 @@ class RedditSimulationRunner:
         if not llm_model:
             llm_model = self.config.get("llm_model", "gpt-4o-mini")
         
-        # 设置 camel-ai 所需的环境变量
+        # 检测 Azure OpenAI 配置
+        azure_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+        azure_api_key = os.environ.get("AZURE_OPENAI_API_KEY", "")
+        azure_api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+        azure_deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "")
+
+        if azure_endpoint and azure_api_key:
+            # 使用 Azure OpenAI
+            os.environ["AZURE_OPENAI_API_KEY"] = azure_api_key
+            os.environ["AZURE_OPENAI_BASE_URL"] = azure_endpoint
+            os.environ["AZURE_API_VERSION"] = azure_api_version
+            os.environ["AZURE_DEPLOYMENT_NAME"] = azure_deployment
+            model_name = azure_deployment or llm_model
+            print(f"LLM配置: [Azure] deployment={model_name}, endpoint={azure_endpoint[:40]}...")
+            return ModelFactory.create(
+                model_platform=ModelPlatformType.AZURE,
+                model_type=model_name,
+            )
+
+        # 设置 camel-ai 所需的环境变量（标准 OpenAI）
         if llm_api_key:
             os.environ["OPENAI_API_KEY"] = llm_api_key
-        
+
         if not os.environ.get("OPENAI_API_KEY"):
             raise ValueError("缺少 API Key 配置，请在项目根目录 .env 文件中设置 LLM_API_KEY")
-        
+
         if llm_base_url:
             os.environ["OPENAI_API_BASE_URL"] = llm_base_url
-        
+
         print(f"LLM配置: model={llm_model}, base_url={llm_base_url[:40] if llm_base_url else '默认'}...")
-        
+
         return ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI,
             model_type=llm_model,
