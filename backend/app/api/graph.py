@@ -285,9 +285,7 @@ def build_graph():
         logger.info("=== 开始构建图谱 ===")
         
         # 检查配置
-        errors = []
-        if not Config.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY未配置")
+        errors = Config.validate()
         if errors:
             logger.error(f"配置错误: {errors}")
             return jsonify({
@@ -384,7 +382,7 @@ def build_graph():
                 )
                 
                 # 创建图谱构建服务
-                builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+                builder = GraphBuilderService()
                 
                 # 分块
                 task_manager.update_task(
@@ -402,7 +400,7 @@ def build_graph():
                 # 创建图谱
                 task_manager.update_task(
                     task_id,
-                    message="创建Zep图谱...",
+                    message="Creating graph...",
                     progress=10
                 )
                 graph_id = builder.create_graph(name=graph_name)
@@ -419,44 +417,28 @@ def build_graph():
                 )
                 builder.set_ontology(graph_id, ontology)
                 
-                # 添加文本（progress_callback 签名是 (msg, progress_ratio)）
-                def add_progress_callback(msg, progress_ratio):
-                    progress = 15 + int(progress_ratio * 40)  # 15% - 55%
+                # Process chunks — LLM extract entities/relations, write to Neo4j
+                def process_progress_callback(msg, progress_ratio):
+                    progress = 15 + int(progress_ratio * 75)  # 15% - 90%
                     task_manager.update_task(
                         task_id,
                         message=msg,
                         progress=progress
                     )
-                
+
                 task_manager.update_task(
                     task_id,
-                    message=f"开始添加 {total_chunks} 个文本块...",
+                    message=f"Processing {total_chunks} text chunks...",
                     progress=15
                 )
-                
-                episode_uuids = builder.add_text_batches(
-                    graph_id, 
+
+                builder._process_chunks(
+                    graph_id,
                     chunks,
+                    ontology,
                     batch_size=3,
-                    progress_callback=add_progress_callback
+                    progress_callback=process_progress_callback
                 )
-                
-                # 等待Zep处理完成（查询每个episode的processed状态）
-                task_manager.update_task(
-                    task_id,
-                    message="等待Zep处理数据...",
-                    progress=55
-                )
-                
-                def wait_progress_callback(msg, progress_ratio):
-                    progress = 55 + int(progress_ratio * 35)  # 55% - 90%
-                    task_manager.update_task(
-                        task_id,
-                        message=msg,
-                        progress=progress
-                    )
-                
-                builder._wait_for_episodes(episode_uuids, wait_progress_callback)
                 
                 # 获取图谱数据
                 task_manager.update_task(
@@ -493,17 +475,21 @@ def build_graph():
                 # 更新项目状态为失败
                 build_logger.error(f"[{task_id}] 图谱构建失败: {str(e)}")
                 build_logger.debug(traceback.format_exc())
-                
-                project.status = ProjectStatus.FAILED
-                project.error = str(e)
-                ProjectManager.save_project(project)
-                
+
+                # Always mark the task as failed first
                 task_manager.update_task(
                     task_id,
                     status=TaskStatus.FAILED,
                     message=f"构建失败: {str(e)}",
                     error=traceback.format_exc()
                 )
+
+                try:
+                    project.status = ProjectStatus.FAILED
+                    project.error = str(e)
+                    ProjectManager.save_project(project)
+                except Exception as save_err:
+                    build_logger.error(f"[{task_id}] 保存项目失败状态时出错: {save_err}")
         
         # 启动后台线程
         thread = threading.Thread(target=build_task, daemon=True)
@@ -553,10 +539,10 @@ def list_tasks():
     列出所有任务
     """
     tasks = TaskManager().list_tasks()
-    
+
     return jsonify({
         "success": True,
-        "data": [t.to_dict() for t in tasks],
+        "data": tasks,
         "count": len(tasks)
     })
 
@@ -569,13 +555,7 @@ def get_graph_data(graph_id: str):
     获取图谱数据（节点和边）
     """
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": "ZEP_API_KEY未配置"
-            }), 500
-        
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        builder = GraphBuilderService()
         graph_data = builder.get_graph_data(graph_id)
         
         return jsonify({
@@ -597,13 +577,7 @@ def delete_graph(graph_id: str):
     删除Zep图谱
     """
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": "ZEP_API_KEY未配置"
-            }), 500
-        
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        builder = GraphBuilderService()
         builder.delete_graph(graph_id)
         
         return jsonify({

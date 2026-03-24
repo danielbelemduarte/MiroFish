@@ -42,9 +42,11 @@ class Config:
     def use_azure_openai(cls) -> bool:
         """检查是否使用Azure OpenAI"""
         return bool(cls.AZURE_OPENAI_ENDPOINT)
-    
-    # Zep配置
-    ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
+
+    # Neo4j配置
+    NEO4J_URI = os.environ.get('NEO4J_URI', 'bolt://localhost:7687')
+    NEO4J_USER = os.environ.get('NEO4J_USER', 'neo4j')
+    NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD', 'mirofish')
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
@@ -78,9 +80,7 @@ class Config:
     def validate(cls):
         """验证必要配置"""
         errors = []
-        if not cls.LLM_API_KEY:
+        if not cls.LLM_API_KEY and not cls.AZURE_OPENAI_API_KEY:
             errors.append("LLM_API_KEY 未配置")
-        if not cls.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY 未配置")
         return errors
 

@@ -326,6 +326,15 @@
                 <div class="waiting-hint">等待本体生成完成...</div>
               </div>
               
+              <!-- Build error -->
+              <div class="detail-section" v-if="error && currentPhase === 1">
+                <div class="detail-label">Error</div>
+                <div class="build-error">
+                  <span class="error-icon-sm">⚠</span>
+                  <span class="error-text">{{ error }}</span>
+                </div>
+              </div>
+
               <!-- 构建进度 -->
               <div class="detail-section" v-if="buildProgress && currentPhase >= 1">
                 <div class="detail-label">构建进度</div>
@@ -668,7 +677,10 @@ const updatePhaseByStatus = (status) => {
       currentPhase.value = 2
       break
     case 'failed':
+      // Show error in the graph building phase so the UI displays it clearly
+      currentPhase.value = 1
       error.value = projectData.value?.error || '处理失败'
+      buildProgress.value = null
       break
   }
 }
@@ -1887,6 +1899,28 @@ onUnmounted(() => {
 .waiting-hint {
   font-size: 0.85rem;
   color: #999;
+}
+
+/* Build error */
+.build-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  background: #FFF5F5;
+  border: 1px solid #FFCDD2;
+  color: #C5283D;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.error-icon-sm {
+  flex-shrink: 0;
+}
+
+.error-text {
+  flex: 1;
 }
 
 /* 进度条 */
