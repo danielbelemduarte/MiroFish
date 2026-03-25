@@ -1,6 +1,6 @@
 """
-模拟相关API路由
-Step2: Zep实体读取与过滤、OASIS模拟准备与运行（全程自动化）
+Simulation-related API routes
+Step2: Entity reading and filtering, OASIS simulation preparation and execution (fully automated)
 """
 
 import os
@@ -19,24 +19,24 @@ from ..models.project import ProjectManager
 logger = get_logger('mirofish.api.simulation')
 
 
-# Interview prompt 优化前缀
-# 添加此前缀可以避免Agent调用工具，直接用文本回复
-INTERVIEW_PROMPT_PREFIX = "结合你的人设、所有的过往记忆与行动，不调用任何工具直接用文本回复我："
+# Interview prompt optimization prefix
+# Adding this prefix prevents the Agent from calling tools, forcing a direct text reply
+INTERVIEW_PROMPT_PREFIX = "Based on your persona, all past memories and actions, reply directly in text without calling any tools:"
 
 
 def optimize_interview_prompt(prompt: str) -> str:
     """
-    优化Interview提问，添加前缀避免Agent调用工具
-    
+    Optimize interview prompt by adding prefix to prevent Agent from calling tools
+
     Args:
-        prompt: 原始提问
-        
+        prompt: Original prompt
+
     Returns:
-        优化后的提问
+        Optimized prompt
     """
     if not prompt:
         return prompt
-    # 避免重复添加前缀
+    # Avoid adding prefix repeatedly
     if prompt.startswith(INTERVIEW_PROMPT_PREFIX):
         return prompt
     return f"{INTERVIEW_PROMPT_PREFIX}{prompt}"

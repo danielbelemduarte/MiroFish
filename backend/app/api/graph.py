@@ -1,6 +1,6 @@
 """
-图谱相关API路由
-采用项目上下文机制，服务端持久化状态
+Graph-related API routes
+Uses project context mechanism with server-side persistent state
 """
 
 import os
@@ -18,33 +18,33 @@ from ..utils.logger import get_logger
 from ..models.task import TaskManager, TaskStatus
 from ..models.project import ProjectManager, ProjectStatus
 
-# 获取日志器
+# Get logger
 logger = get_logger('mirofish.api')
 
 
 def allowed_file(filename: str) -> bool:
-    """检查文件扩展名是否允许"""
+    """Check if file extension is allowed"""
     if not filename or '.' not in filename:
         return False
     ext = os.path.splitext(filename)[1].lower().lstrip('.')
     return ext in Config.ALLOWED_EXTENSIONS
 
 
-# ============== 项目管理接口 ==============
+# ============== Project Management Endpoints ==============
 
 @graph_bp.route('/project/<project_id>', methods=['GET'])
 def get_project(project_id: str):
     """
-    获取项目详情
+    Get project details
     """
     project = ProjectManager.get_project(project_id)
     
     if not project:
         return jsonify({
             "success": False,
-            "error": f"项目不存在: {project_id}"
+            "error": f"Project not found: {project_id}"
         }), 404
-    
+
     return jsonify({
         "success": True,
         "data": project.to_dict()
@@ -54,7 +54,7 @@ def get_project(project_id: str):
 @graph_bp.route('/project/list', methods=['GET'])
 def list_projects():
     """
-    列出所有项目
+    List all projects
     """
     limit = request.args.get('limit', 50, type=int)
     projects = ProjectManager.list_projects(limit=limit)
@@ -69,36 +69,36 @@ def list_projects():
 @graph_bp.route('/project/<project_id>', methods=['DELETE'])
 def delete_project(project_id: str):
     """
-    删除项目
+    Delete project
     """
     success = ProjectManager.delete_project(project_id)
     
     if not success:
         return jsonify({
             "success": False,
-            "error": f"项目不存在或删除失败: {project_id}"
+            "error": f"Project not found or deletion failed: {project_id}"
         }), 404
     
     return jsonify({
         "success": True,
-        "message": f"项目已删除: {project_id}"
+        "message": f"Project deleted: {project_id}"
     })
 
 
 @graph_bp.route('/project/<project_id>/reset', methods=['POST'])
 def reset_project(project_id: str):
     """
-    重置项目状态（用于重新构建图谱）
+    Reset project status (for rebuilding graph)
     """
     project = ProjectManager.get_project(project_id)
     
     if not project:
         return jsonify({
             "success": False,
-            "error": f"项目不存在: {project_id}"
+            "error": f"Project not found: {project_id}"
         }), 404
     
-    # 重置到本体已生成状态
+    # Reset to ontology-generated state
     if project.ontology:
         project.status = ProjectStatus.ONTOLOGY_GENERATED
     else:
@@ -113,27 +113,27 @@ def reset_project(project_id: str):
     
     return jsonify({
         "success": True,
-        "message": f"项目已重置: {project_id}",
+        "message": f"Project reset: {project_id}",
         "data": project.to_dict()
     })
 
 
-# ============== 接口1：上传文件并生成本体 ==============
+# ============== Endpoint 1: Upload Files and Generate Ontology ==============
 
 @graph_bp.route('/ontology/generate', methods=['POST'])
 def generate_ontology():
     """
-    接口1：上传文件，分析生成本体定义
-    
-    请求方式：multipart/form-data
-    
-    参数：
-        files: 上传的文件（PDF/MD/TXT），可多个
-        simulation_requirement: 模拟需求描述（必填）
-        project_name: 项目名称（可选）
-        additional_context: 额外说明（可选）
-        
-    返回：
+    Endpoint 1: Upload files and generate ontology definition
+
+    Request format: multipart/form-data
+
+    Parameters:
+        files: Uploaded files (PDF/MD/TXT), multiple allowed
+        simulation_requirement: Simulation requirement description (required)
+        project_name: Project name (optional)
+        additional_context: Additional notes (optional)
+
+    Returns:
         {
             "success": true,
             "data": {
@@ -149,42 +149,42 @@ def generate_ontology():
         }
     """
     try:
-        logger.info("=== 开始生成本体定义 ===")
-        
-        # 获取参数
+        logger.info("=== Starting ontology generation ===")
+
+        # Get parameters
         simulation_requirement = request.form.get('simulation_requirement', '')
         project_name = request.form.get('project_name', 'Unnamed Project')
         additional_context = request.form.get('additional_context', '')
         
-        logger.debug(f"项目名称: {project_name}")
-        logger.debug(f"模拟需求: {simulation_requirement[:100]}...")
+        logger.debug(f"Project name: {project_name}")
+        logger.debug(f"Simulation requirement: {simulation_requirement[:100]}...")
         
         if not simulation_requirement:
             return jsonify({
                 "success": False,
-                "error": "请提供模拟需求描述 (simulation_requirement)"
+                "error": "Please provide a simulation requirement description (simulation_requirement)"
             }), 400
         
-        # 获取上传的文件
+        # Get uploaded files
         uploaded_files = request.files.getlist('files')
         if not uploaded_files or all(not f.filename for f in uploaded_files):
             return jsonify({
                 "success": False,
-                "error": "请至少上传一个文档文件"
+                "error": "Please upload at least one document file"
             }), 400
         
-        # 创建项目
+        # Create project
         project = ProjectManager.create_project(name=project_name)
         project.simulation_requirement = simulation_requirement
-        logger.info(f"创建项目: {project.project_id}")
-        
-        # 保存文件并提取文本
+        logger.info(f"Created project: {project.project_id}")
+
+        # Save files and extract text
         document_texts = []
         all_text = ""
         
         for file in uploaded_files:
             if file and file.filename and allowed_file(file.filename):
-                # 保存文件到项目目录
+                # Save file to project directory
                 file_info = ProjectManager.save_file_to_project(
                     project.project_id, 
                     file, 
@@ -195,7 +195,7 @@ def generate_ontology():
                     "size": file_info["size"]
                 })
                 
-                # 提取文本
+                # Extract text
                 text = FileParser.extract_text(file_info["path"])
                 text = TextProcessor.preprocess_text(text)
                 document_texts.append(text)
@@ -205,16 +205,16 @@ def generate_ontology():
             ProjectManager.delete_project(project.project_id)
             return jsonify({
                 "success": False,
-                "error": "没有成功处理任何文档，请检查文件格式"
+                "error": "No documents were processed successfully, please check file formats"
             }), 400
         
-        # 保存提取的文本
+        # Save extracted text
         project.total_text_length = len(all_text)
         ProjectManager.save_extracted_text(project.project_id, all_text)
-        logger.info(f"文本提取完成，共 {len(all_text)} 字符")
-        
-        # 生成本体
-        logger.info(f"调用 LLM 生成本体定义... (Azure={Config.use_azure_openai()})")
+        logger.info(f"Text extraction complete, {len(all_text)} characters total")
+
+        # Generate ontology
+        logger.info(f"Calling LLM to generate ontology definition... (Azure={Config.use_azure_openai()})")
         generator = OntologyGenerator()
         ontology = generator.generate(
             document_texts=document_texts,
@@ -222,10 +222,10 @@ def generate_ontology():
             additional_context=additional_context if additional_context else None
         )
         
-        # 保存本体到项目
+        # Save ontology to project
         entity_count = len(ontology.get("entity_types", []))
         edge_count = len(ontology.get("edge_types", []))
-        logger.info(f"本体生成完成: {entity_count} 个实体类型, {edge_count} 个关系类型")
+        logger.info(f"Ontology generation complete: {entity_count} entity types, {edge_count} relation types")
         
         project.ontology = {
             "entity_types": ontology.get("entity_types", []),
@@ -234,7 +234,7 @@ def generate_ontology():
         project.analysis_summary = ontology.get("analysis_summary", "")
         project.status = ProjectStatus.ONTOLOGY_GENERATED
         ProjectManager.save_project(project)
-        logger.info(f"=== 本体生成完成 === 项目ID: {project.project_id}")
+        logger.info(f"=== Ontology generation complete === Project ID: {project.project_id}")
         
         return jsonify({
             "success": True,
@@ -258,76 +258,76 @@ def generate_ontology():
         }), 500
 
 
-# ============== 接口2：构建图谱 ==============
+# ============== Endpoint 2: Build Graph ==============
 
 @graph_bp.route('/build', methods=['POST'])
 def build_graph():
     """
-    接口2：根据project_id构建图谱
-    
-    请求（JSON）：
+    Endpoint 2: Build graph from project_id
+
+    Request (JSON):
         {
-            "project_id": "proj_xxxx",  // 必填，来自接口1
-            "graph_name": "图谱名称",    // 可选
-            "chunk_size": 500,          // 可选，默认500
-            "chunk_overlap": 50         // 可选，默认50
+            "project_id": "proj_xxxx",  // Required, from Endpoint 1
+            "graph_name": "Graph name",  // Optional
+            "chunk_size": 500,          // Optional, default 500
+            "chunk_overlap": 50         // Optional, default 50
         }
-        
-    返回：
+
+    Returns:
         {
             "success": true,
             "data": {
                 "project_id": "proj_xxxx",
                 "task_id": "task_xxxx",
-                "message": "图谱构建任务已启动"
+                "message": "Graph build task started"
             }
         }
     """
     try:
-        logger.info("=== 开始构建图谱 ===")
-        
-        # 检查配置
+        logger.info("=== Starting graph build ===")
+
+        # Check configuration
         errors = Config.validate()
         if errors:
-            logger.error(f"配置错误: {errors}")
+            logger.error(f"Configuration error: {errors}")
             return jsonify({
                 "success": False,
-                "error": "配置错误: " + "; ".join(errors)
+                "error": "Configuration error: " + "; ".join(errors)
             }), 500
         
-        # 解析请求
+        # Parse request
         data = request.get_json() or {}
         project_id = data.get('project_id')
-        logger.debug(f"请求参数: project_id={project_id}")
+        logger.debug(f"Request params: project_id={project_id}")
         
         if not project_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 project_id"
+                "error": "Please provide project_id"
             }), 400
         
-        # 获取项目
+        # Get project
         project = ProjectManager.get_project(project_id)
         if not project:
             return jsonify({
                 "success": False,
-                "error": f"项目不存在: {project_id}"
+                "error": f"Project not found: {project_id}"
             }), 404
         
-        # 检查项目状态
-        force = data.get('force', False)    # 强制重新构建（from scratch）
-        resume = data.get('resume', False)  # 从中断处继续
+        # Check project status
+        force = data.get('force', False)    # Force rebuild from scratch
+        resume = data.get('resume', False)  # Resume from interruption point
 
         if project.status == ProjectStatus.CREATED:
             return jsonify({
                 "success": False,
-                "error": "项目尚未生成本体，请先调用 /ontology/generate"
+                "error": "Ontology has not been generated yet, please call /ontology/generate first"
             }), 400
 
         if project.status == ProjectStatus.GRAPH_BUILDING and not force and not resume:
             return jsonify({
                 "success": False,
-                "error": "图谱正在构建中，请勿重复提交。如需强制重建请添加 force: true，如需恢复请添加 resume: true",
+                "error": "Graph is currently being built, do not submit again. To force rebuild add force: true, to resume add resume: true",
                 "task_id": project.graph_build_task_id
             }), 400
 
@@ -355,37 +355,37 @@ def build_graph():
             project.error = None
             resuming = False
         
-        # 获取配置
+        # Get configuration
         graph_name = data.get('graph_name', project.name or 'MiroFish Graph')
         chunk_size = data.get('chunk_size', project.chunk_size or Config.DEFAULT_CHUNK_SIZE)
         chunk_overlap = data.get('chunk_overlap', project.chunk_overlap or Config.DEFAULT_CHUNK_OVERLAP)
         
-        # 更新项目配置
+        # Update project configuration
         project.chunk_size = chunk_size
         project.chunk_overlap = chunk_overlap
         
-        # 获取提取的文本
+        # Get extracted text
         text = ProjectManager.get_extracted_text(project_id)
         if not text:
             return jsonify({
                 "success": False,
-                "error": "未找到提取的文本内容"
+                "error": "Extracted text content not found"
             }), 400
         
-        # 获取本体
+        # Get ontology
         ontology = project.ontology
         if not ontology:
             return jsonify({
                 "success": False,
-                "error": "未找到本体定义"
+                "error": "Ontology definition not found"
             }), 400
         
-        # 创建异步任务
+        # Create async task
         task_manager = TaskManager()
-        task_id = task_manager.create_task(f"构建图谱: {graph_name}")
-        logger.info(f"创建图谱构建任务: task_id={task_id}, project_id={project_id}")
+        task_id = task_manager.create_task(f"Build graph: {graph_name}")
+        logger.info(f"Created graph build task: task_id={task_id}, project_id={project_id}")
         
-        # 更新项目状态
+        # Update project status
         project.status = ProjectStatus.GRAPH_BUILDING
         project.graph_build_task_id = task_id
         ProjectManager.save_project(project)
@@ -395,24 +395,24 @@ def build_graph():
         _resume_graph_id = project.graph_id if resuming else None
         _resume_from_chunk = project.chunks_processed if resuming else 0
 
-        # 启动后台任务
+        # Start background task
         def build_task():
             build_logger = get_logger('mirofish.build')
             try:
-                build_logger.info(f"[{task_id}] 开始构建图谱... (resume={_resuming}, start_chunk={_resume_from_chunk})")
+                build_logger.info(f"[{task_id}] Starting graph build... (resume={_resuming}, start_chunk={_resume_from_chunk})")
                 task_manager.update_task(
                     task_id,
                     status=TaskStatus.PROCESSING,
-                    message="初始化图谱构建服务..."
+                    message="Initializing graph build service..."
                 )
 
-                # 创建图谱构建服务
+                # Create graph build service
                 builder = GraphBuilderService()
 
-                # 分块
+                # Chunking
                 task_manager.update_task(
                     task_id,
-                    message="文本分块中...",
+                    message="Splitting text into chunks...",
                     progress=5
                 )
                 chunks = TextProcessor.split_text(
@@ -456,7 +456,7 @@ def build_graph():
 
                     task_manager.update_task(
                         task_id,
-                        message="设置本体定义...",
+                        message="Setting ontology definition...",
                         progress=15
                     )
                     builder.set_ontology(graph_id, ontology)
@@ -493,28 +493,28 @@ def build_graph():
                     save_progress_callback=save_progress,
                 )
 
-                # 获取图谱数据
+                # Get graph data
                 task_manager.update_task(
                     task_id,
-                    message="获取图谱数据...",
+                    message="Retrieving graph data...",
                     progress=95
                 )
                 graph_data = builder.get_graph_data(graph_id)
 
-                # 更新项目状态
+                # Update project status
                 project.status = ProjectStatus.GRAPH_COMPLETED
                 project.chunks_processed = total_chunks
                 ProjectManager.save_project(project)
 
                 node_count = graph_data.get("node_count", 0)
                 edge_count = graph_data.get("edge_count", 0)
-                build_logger.info(f"[{task_id}] 图谱构建完成: graph_id={graph_id}, 节点={node_count}, 边={edge_count}")
+                build_logger.info(f"[{task_id}] Graph build complete: graph_id={graph_id}, nodes={node_count}, edges={edge_count}")
 
-                # 完成
+                # Complete
                 task_manager.update_task(
                     task_id,
                     status=TaskStatus.COMPLETED,
-                    message="图谱构建完成",
+                    message="Graph build complete",
                     progress=100,
                     result={
                         "project_id": project_id,
@@ -526,15 +526,15 @@ def build_graph():
                 )
 
             except Exception as e:
-                # 更新项目状态为失败
-                build_logger.error(f"[{task_id}] 图谱构建失败: {str(e)}")
+                # Update project status to failed
+                build_logger.error(f"[{task_id}] Graph build failed: {str(e)}")
                 build_logger.debug(traceback.format_exc())
 
                 # Always mark the task as failed first
                 task_manager.update_task(
                     task_id,
                     status=TaskStatus.FAILED,
-                    message=f"构建失败: {str(e)}",
+                    message=f"Build failed: {str(e)}",
                     error=traceback.format_exc()
                 )
 
@@ -543,16 +543,16 @@ def build_graph():
                     project.error = str(e)
                     ProjectManager.save_project(project)
                 except Exception as save_err:
-                    build_logger.error(f"[{task_id}] 保存项目失败状态时出错: {save_err}")
+                    build_logger.error(f"[{task_id}] Error saving project failed status: {save_err}")
         
-        # 启动后台线程
+        # Start background thread
         thread = threading.Thread(target=build_task, daemon=True)
         thread.start()
         
         if resuming:
-            msg = f"图谱构建任务已恢复（从第 {project.chunks_processed}/{project.total_chunks} 块继续），请通过 /task/{task_id} 查询进度"
+            msg = f"Graph build task resumed (continuing from chunk {project.chunks_processed}/{project.total_chunks}), check progress via /task/{task_id}"
         else:
-            msg = "图谱构建任务已启动，请通过 /task/{task_id} 查询进度"
+            msg = f"Graph build task started, check progress via /task/{task_id}"
 
         return jsonify({
             "success": True,
@@ -573,19 +573,19 @@ def build_graph():
         }), 500
 
 
-# ============== 任务查询接口 ==============
+# ============== Task Query Endpoints ==============
 
 @graph_bp.route('/task/<task_id>', methods=['GET'])
 def get_task(task_id: str):
     """
-    查询任务状态
+    Query task status
     """
     task = TaskManager().get_task(task_id)
     
     if not task:
         return jsonify({
             "success": False,
-            "error": f"任务不存在: {task_id}"
+            "error": f"Task not found: {task_id}"
         }), 404
     
     return jsonify({
@@ -597,7 +597,7 @@ def get_task(task_id: str):
 @graph_bp.route('/tasks', methods=['GET'])
 def list_tasks():
     """
-    列出所有任务
+    List all tasks
     """
     tasks = TaskManager().list_tasks()
 
@@ -608,12 +608,12 @@ def list_tasks():
     })
 
 
-# ============== 图谱数据接口 ==============
+# ============== Graph Data Endpoints ==============
 
 @graph_bp.route('/data/<graph_id>', methods=['GET'])
 def get_graph_data(graph_id: str):
     """
-    获取图谱数据（节点和边）
+    Get graph data (nodes and edges)
     """
     try:
         builder = GraphBuilderService()
@@ -635,7 +635,7 @@ def get_graph_data(graph_id: str):
 @graph_bp.route('/delete/<graph_id>', methods=['DELETE'])
 def delete_graph(graph_id: str):
     """
-    删除Zep图谱
+    Delete graph
     """
     try:
         builder = GraphBuilderService()
@@ -643,7 +643,7 @@ def delete_graph(graph_id: str):
         
         return jsonify({
             "success": True,
-            "message": f"图谱已删除: {graph_id}"
+            "message": f"Graph deleted: {graph_id}"
         })
         
     except Exception as e:
