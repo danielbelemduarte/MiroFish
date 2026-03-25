@@ -660,23 +660,23 @@ const loadProject = async () => {
         await startBuildGraph()
       }
       
-      // 继续轮询构建中的任务
+      // Continue polling building tasks
       if (response.data.status === 'graph_building' && response.data.graph_build_task_id) {
         currentPhase.value = 1
         startPollingTask(response.data.graph_build_task_id)
       }
       
-      // 加载已完成的图谱
+      // Load completed graph
       if (response.data.status === 'graph_completed' && response.data.graph_id) {
         currentPhase.value = 2
         await loadGraph(response.data.graph_id)
       }
     } else {
-      error.value = response.error || '加载项目失败'
+      error.value = response.error || 'Failed to load project'
     }
   } catch (err) {
     console.error('Load project error:', err)
-    error.value = '加载项目失败: ' + (err.message || '未知错误')
+    error.value = 'Failed to load project: ' + (err.message || 'Unknown error')
   } finally {
     loading.value = false
   }
@@ -697,28 +697,28 @@ const updatePhaseByStatus = (status) => {
     case 'failed':
       // Show error in the graph building phase so the UI displays it clearly
       currentPhase.value = 1
-      error.value = projectData.value?.error || '处理失败'
+      error.value = projectData.value?.error || 'Processing failed'
       buildProgress.value = null
       break
   }
 }
 
-// 开始构建图谱
+// Start building graph
 const startBuildGraph = async () => {
   try {
     currentPhase.value = 1
-    // 设置初始进度
+    // Set initial progress
     buildProgress.value = {
       progress: 0,
-      message: '正在启动图谱构建...'
+      message: 'Starting graph build...'
     }
     
     const response = await buildGraph({ project_id: currentProjectId.value })
     
     if (response.success) {
-      buildProgress.value.message = '图谱构建任务已启动...'
+      buildProgress.value.message = 'Graph build task started...'
       
-      // 保存 task_id 用于轮询
+      // Save task_id for polling
       const taskId = response.data.task_id
       
       // 启动图谱数据轮询（独立于任务状态轮询）
