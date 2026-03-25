@@ -236,6 +236,11 @@ class SimulationConfigGenerator:
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
 
+        if Config.use_azure_openai():
+            self.base_url = Config.AZURE_OPENAI_ENDPOINT or ""
+        else:
+            self.base_url = base_url or Config.LLM_BASE_URL or ""
+
         self.client = create_openai_client(
             api_key=api_key,
             base_url=base_url,

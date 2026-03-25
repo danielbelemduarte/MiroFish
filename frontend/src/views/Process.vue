@@ -333,6 +333,14 @@
                   <span class="error-icon-sm">⚠</span>
                   <span class="error-text">{{ error }}</span>
                 </div>
+                <div class="error-actions">
+                  <button class="resume-btn" @click="resumeBuildGraph" v-if="canResume">
+                    ▶ Resume
+                  </button>
+                  <button class="retry-btn" @click="retryBuildGraph">
+                    ↻ Rebuild
+                  </button>
+                </div>
               </div>
 
               <!-- 构建进度 -->
@@ -465,6 +473,16 @@ const statusText = computed(() => {
   if (currentPhase.value === 1) return '图谱构建中'
   if (currentPhase.value === 0) return '本体生成中'
   return '初始化中'
+})
+
+const canResume = computed(() => {
+  if (!projectData.value) return false
+  return (
+    projectData.value.graph_id &&
+    projectData.value.chunks_processed > 0 &&
+    projectData.value.total_chunks > 0 &&
+    projectData.value.chunks_processed < projectData.value.total_chunks
+  )
 })
 
 const entityTypes = computed(() => {
@@ -715,6 +733,50 @@ const startBuildGraph = async () => {
   } catch (err) {
     console.error('Build graph error:', err)
     error.value = '启动图谱构建失败: ' + (err.message || '未知错误')
+    buildProgress.value = null
+  }
+}
+
+// Resume build from where it left off
+const resumeBuildGraph = async () => {
+  try {
+    error.value = ''
+    currentPhase.value = 1
+    buildProgress.value = { progress: 0, message: 'Resuming graph build...' }
+
+    const response = await buildGraph({ project_id: currentProjectId.value, resume: true })
+    if (response.success) {
+      buildProgress.value.message = response.data.message || 'Resuming...'
+      startGraphPolling()
+      startPollingTask(response.data.task_id)
+    } else {
+      error.value = response.error || 'Resume failed'
+      buildProgress.value = null
+    }
+  } catch (err) {
+    error.value = 'Resume failed: ' + (err.message || 'unknown error')
+    buildProgress.value = null
+  }
+}
+
+// Force rebuild from scratch
+const retryBuildGraph = async () => {
+  try {
+    error.value = ''
+    currentPhase.value = 1
+    buildProgress.value = { progress: 0, message: 'Restarting graph build...' }
+
+    const response = await buildGraph({ project_id: currentProjectId.value, force: true })
+    if (response.success) {
+      buildProgress.value.message = response.data.message || 'Building...'
+      startGraphPolling()
+      startPollingTask(response.data.task_id)
+    } else {
+      error.value = response.error || 'Rebuild failed'
+      buildProgress.value = null
+    }
+  } catch (err) {
+    error.value = 'Rebuild failed: ' + (err.message || 'unknown error')
     buildProgress.value = null
   }
 }
@@ -1913,6 +1975,41 @@ onUnmounted(() => {
   font-size: 0.8rem;
   line-height: 1.5;
   word-break: break-word;
+}
+
+.error-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.resume-btn,
+.retry-btn {
+  padding: 6px 14px;
+  font-size: 0.78rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #fff;
+  transition: all 0.2s;
+}
+
+.resume-btn {
+  color: #2E7D32;
+  border-color: #81C784;
+}
+
+.resume-btn:hover {
+  background: #E8F5E9;
+}
+
+.retry-btn {
+  color: #C5283D;
+  border-color: #FFCDD2;
+}
+
+.retry-btn:hover {
+  background: #FFF5F5;
 }
 
 .error-icon-sm {

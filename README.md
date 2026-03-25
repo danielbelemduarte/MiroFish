@@ -91,6 +91,28 @@ MiroFish 致力于打造映射现实的群体智能镜像，通过捕捉个体�
 4. **报告生成**：ReportAgent拥有丰富的工具集与模拟后环境进行深度交互
 5. **深度互动**：与模拟世界中的任意一位进行对话 & 与ReportAgent进行对话
 
+## 🔁 图谱构建：断点续传
+
+图谱构建过程支持**断点续传**。如果构建中途被中断（服务器停止、网络错误等），已处理的数据不会丢失，可以从中断处继续。
+
+**通过 UI 操作：** 构建失败后，右侧面板会显示 **Resume**（继续）和 **Rebuild**（重建）两个按钮。
+
+**通过 API 操作：**
+
+```bash
+# 从中断处继续构建
+curl -X POST http://localhost:5001/api/graph/build \
+  -H "Content-Type: application/json" \
+  -d '{"project_id": "proj_xxxx", "resume": true}'
+
+# 强制从头重建（丢弃已有进度）
+curl -X POST http://localhost:5001/api/graph/build \
+  -H "Content-Type: application/json" \
+  -d '{"project_id": "proj_xxxx", "force": true}'
+```
+
+> 如果项目状态为 `failed` 且存在部分进度，再次调用 build 接口会自动进入续传模式，无需显式传 `resume: true`。
+
 ## 🚀 快速开始
 
 ### 一、源码部署（推荐）

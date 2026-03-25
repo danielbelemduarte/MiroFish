@@ -168,18 +168,30 @@ class GraphBuilderService:
         ontology: Dict[str, Any],
         batch_size: int = 3,
         progress_callback: Optional[Callable] = None,
+        start_from: int = 0,
+        entity_uuid_map: Optional[Dict[str, str]] = None,
+        save_progress_callback: Optional[Callable[[int], None]] = None,
     ):
         """
         For each text chunk:
         1. Store as episode
         2. LLM-extract entities & relations
         3. Write extracted data to Neo4j
+
+        Args:
+            start_from: chunk index to resume from (0-based, skip chunks before this)
+            entity_uuid_map: pre-built name→uuid map (for resume)
+            save_progress_callback: called with chunks_processed count after each chunk
         """
         total = len(chunks)
         # Keep a name->uuid map to link relations correctly
-        entity_uuid_map: Dict[str, str] = {}
+        if entity_uuid_map is None:
+            entity_uuid_map = {}
 
         for i, chunk in enumerate(chunks):
+            if i < start_from:
+                continue
+
             batch_num = i + 1
 
             if progress_callback:
@@ -232,6 +244,15 @@ class GraphBuilderService:
 
             # Mark episode processed
             self.client.mark_episode_processed(ep_uuid)
+
+            # Persist resume progress
+            if save_progress_callback:
+                save_progress_callback(i + 1)
+
+    def rebuild_entity_map(self, graph_id: str) -> Dict[str, str]:
+        """Rebuild entity name→uuid map from existing Neo4j nodes (for resume)."""
+        nodes = self.client.get_nodes_by_graph(graph_id)
+        return {node.name: node.uuid_ for node in nodes}
 
     def _get_graph_info(self, graph_id: str) -> GraphInfo:
         nodes = self.client.get_nodes_by_graph(graph_id)

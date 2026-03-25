@@ -48,7 +48,11 @@ class Project:
     simulation_requirement: Optional[str] = None
     chunk_size: int = 500
     chunk_overlap: int = 50
-    
+
+    # Resume support
+    total_chunks: int = 0
+    chunks_processed: int = 0
+
     # 错误信息
     error: Optional[str] = None
     
@@ -69,6 +73,8 @@ class Project:
             "simulation_requirement": self.simulation_requirement,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
+            "total_chunks": self.total_chunks,
+            "chunks_processed": self.chunks_processed,
             "error": self.error
         }
     
@@ -94,6 +100,8 @@ class Project:
             simulation_requirement=data.get('simulation_requirement'),
             chunk_size=data.get('chunk_size', 500),
             chunk_overlap=data.get('chunk_overlap', 50),
+            total_chunks=data.get('total_chunks', 0),
+            chunks_processed=data.get('chunks_processed', 0),
             error=data.get('error')
         )
 

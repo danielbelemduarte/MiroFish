@@ -91,6 +91,28 @@ Click the image to watch MiroFish's deep prediction of the lost ending based on 
 4. **Report Generation**: ReportAgent with rich toolset for deep interaction with post-simulation environment
 5. **Deep Interaction**: Chat with any agent in the simulated world & Interact with ReportAgent
 
+## 🔁 Graph Building: Resume Capability
+
+The graph building process supports **resumable builds**. If the build is interrupted (server crash, network error, etc.), already-processed data is preserved and you can continue from where it left off.
+
+**Via the UI:** After a build failure, the right panel shows **Resume** (continue from last checkpoint) and **Rebuild** (start from scratch) buttons.
+
+**Via the API:**
+
+```bash
+# Resume from where it stopped
+curl -X POST http://localhost:5001/api/graph/build \
+  -H "Content-Type: application/json" \
+  -d '{"project_id": "proj_xxxx", "resume": true}'
+
+# Force a full rebuild (discards partial progress)
+curl -X POST http://localhost:5001/api/graph/build \
+  -H "Content-Type: application/json" \
+  -d '{"project_id": "proj_xxxx", "force": true}'
+```
+
+> If the project status is `failed` and partial progress exists, calling the build endpoint again will automatically resume — no need to explicitly pass `resume: true`.
+
 ## 🚀 Quick Start
 
 ### Option 1: Source Code Deployment (Recommended)

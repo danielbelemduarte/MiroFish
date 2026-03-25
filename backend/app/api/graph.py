@@ -106,6 +106,8 @@ def reset_project(project_id: str):
     
     project.graph_id = None
     project.graph_build_task_id = None
+    project.total_chunks = 0
+    project.chunks_processed = 0
     project.error = None
     ProjectManager.save_project(project)
     
@@ -313,27 +315,45 @@ def build_graph():
             }), 404
         
         # 检查项目状态
-        force = data.get('force', False)  # 强制重新构建
-        
+        force = data.get('force', False)    # 强制重新构建（from scratch）
+        resume = data.get('resume', False)  # 从中断处继续
+
         if project.status == ProjectStatus.CREATED:
             return jsonify({
                 "success": False,
                 "error": "项目尚未生成本体，请先调用 /ontology/generate"
             }), 400
-        
-        if project.status == ProjectStatus.GRAPH_BUILDING and not force:
+
+        if project.status == ProjectStatus.GRAPH_BUILDING and not force and not resume:
             return jsonify({
                 "success": False,
-                "error": "图谱正在构建中，请勿重复提交。如需强制重建，请添加 force: true",
+                "error": "图谱正在构建中，请勿重复提交。如需强制重建请添加 force: true，如需恢复请添加 resume: true",
                 "task_id": project.graph_build_task_id
             }), 400
-        
-        # 如果强制重建，重置状态
+
+        # Determine resume mode: auto-resume if status is FAILED/GRAPH_BUILDING
+        # and there's an existing graph_id with processed chunks
+        can_resume = (
+            project.graph_id
+            and project.chunks_processed > 0
+            and project.total_chunks > 0
+            and project.chunks_processed < project.total_chunks
+        )
+        resuming = resume or (
+            not force
+            and can_resume
+            and project.status in [ProjectStatus.FAILED, ProjectStatus.GRAPH_BUILDING]
+        )
+
+        # If force rebuild, reset everything
         if force and project.status in [ProjectStatus.GRAPH_BUILDING, ProjectStatus.FAILED, ProjectStatus.GRAPH_COMPLETED]:
             project.status = ProjectStatus.ONTOLOGY_GENERATED
             project.graph_id = None
             project.graph_build_task_id = None
+            project.total_chunks = 0
+            project.chunks_processed = 0
             project.error = None
+            resuming = False
         
         # 获取配置
         graph_name = data.get('graph_name', project.name or 'MiroFish Graph')
@@ -370,20 +390,25 @@ def build_graph():
         project.graph_build_task_id = task_id
         ProjectManager.save_project(project)
         
+        # Capture resume state for the background thread
+        _resuming = resuming
+        _resume_graph_id = project.graph_id if resuming else None
+        _resume_from_chunk = project.chunks_processed if resuming else 0
+
         # 启动后台任务
         def build_task():
             build_logger = get_logger('mirofish.build')
             try:
-                build_logger.info(f"[{task_id}] 开始构建图谱...")
+                build_logger.info(f"[{task_id}] 开始构建图谱... (resume={_resuming}, start_chunk={_resume_from_chunk})")
                 task_manager.update_task(
-                    task_id, 
+                    task_id,
                     status=TaskStatus.PROCESSING,
                     message="初始化图谱构建服务..."
                 )
-                
+
                 # 创建图谱构建服务
                 builder = GraphBuilderService()
-                
+
                 # 分块
                 task_manager.update_task(
                     task_id,
@@ -391,33 +416,52 @@ def build_graph():
                     progress=5
                 )
                 chunks = TextProcessor.split_text(
-                    text, 
-                    chunk_size=chunk_size, 
+                    text,
+                    chunk_size=chunk_size,
                     overlap=chunk_overlap
                 )
                 total_chunks = len(chunks)
-                
-                # 创建图谱
-                task_manager.update_task(
-                    task_id,
-                    message="Creating graph...",
-                    progress=10
-                )
-                graph_id = builder.create_graph(name=graph_name)
-                
-                # 更新项目的graph_id
-                project.graph_id = graph_id
+
+                # Save total_chunks for future resume
+                project.total_chunks = total_chunks
                 ProjectManager.save_project(project)
-                
-                # 设置本体
-                task_manager.update_task(
-                    task_id,
-                    message="设置本体定义...",
-                    progress=15
-                )
-                builder.set_ontology(graph_id, ontology)
-                
-                # Process chunks — LLM extract entities/relations, write to Neo4j
+
+                entity_uuid_map = None
+                start_from = 0
+
+                if _resuming and _resume_graph_id:
+                    # Resume mode: reuse existing graph, rebuild entity map
+                    graph_id = _resume_graph_id
+                    start_from = min(_resume_from_chunk, total_chunks)
+                    build_logger.info(f"[{task_id}] Resuming from chunk {start_from}/{total_chunks}")
+
+                    task_manager.update_task(
+                        task_id,
+                        message=f"Resuming — rebuilding entity map from Neo4j...",
+                        progress=10
+                    )
+                    entity_uuid_map = builder.rebuild_entity_map(graph_id)
+                    build_logger.info(f"[{task_id}] Rebuilt entity map: {len(entity_uuid_map)} entities")
+                else:
+                    # Fresh build: create graph + set ontology
+                    task_manager.update_task(
+                        task_id,
+                        message="Creating graph...",
+                        progress=10
+                    )
+                    graph_id = builder.create_graph(name=graph_name)
+                    project.graph_id = graph_id
+                    project.chunks_processed = 0
+                    ProjectManager.save_project(project)
+
+                    task_manager.update_task(
+                        task_id,
+                        message="设置本体定义...",
+                        progress=15
+                    )
+                    builder.set_ontology(graph_id, ontology)
+
+                # Progress callback
                 def process_progress_callback(msg, progress_ratio):
                     progress = 15 + int(progress_ratio * 75)  # 15% - 90%
                     task_manager.update_task(
@@ -426,9 +470,15 @@ def build_graph():
                         progress=progress
                     )
 
+                # Save progress callback — persist chunks_processed after each chunk
+                def save_progress(chunks_done):
+                    project.chunks_processed = chunks_done
+                    ProjectManager.save_project(project)
+
+                remaining = total_chunks - start_from
                 task_manager.update_task(
                     task_id,
-                    message=f"Processing {total_chunks} text chunks...",
+                    message=f"Processing {remaining} chunks ({start_from} already done)..." if start_from else f"Processing {total_chunks} text chunks...",
                     progress=15
                 )
 
@@ -437,9 +487,12 @@ def build_graph():
                     chunks,
                     ontology,
                     batch_size=3,
-                    progress_callback=process_progress_callback
+                    progress_callback=process_progress_callback,
+                    start_from=start_from,
+                    entity_uuid_map=entity_uuid_map,
+                    save_progress_callback=save_progress,
                 )
-                
+
                 # 获取图谱数据
                 task_manager.update_task(
                     task_id,
@@ -447,15 +500,16 @@ def build_graph():
                     progress=95
                 )
                 graph_data = builder.get_graph_data(graph_id)
-                
+
                 # 更新项目状态
                 project.status = ProjectStatus.GRAPH_COMPLETED
+                project.chunks_processed = total_chunks
                 ProjectManager.save_project(project)
-                
+
                 node_count = graph_data.get("node_count", 0)
                 edge_count = graph_data.get("edge_count", 0)
                 build_logger.info(f"[{task_id}] 图谱构建完成: graph_id={graph_id}, 节点={node_count}, 边={edge_count}")
-                
+
                 # 完成
                 task_manager.update_task(
                     task_id,
@@ -470,7 +524,7 @@ def build_graph():
                         "chunk_count": total_chunks
                     }
                 )
-                
+
             except Exception as e:
                 # 更新项目状态为失败
                 build_logger.error(f"[{task_id}] 图谱构建失败: {str(e)}")
@@ -495,12 +549,19 @@ def build_graph():
         thread = threading.Thread(target=build_task, daemon=True)
         thread.start()
         
+        if resuming:
+            msg = f"图谱构建任务已恢复（从第 {project.chunks_processed}/{project.total_chunks} 块继续），请通过 /task/{task_id} 查询进度"
+        else:
+            msg = "图谱构建任务已启动，请通过 /task/{task_id} 查询进度"
+
         return jsonify({
             "success": True,
             "data": {
                 "project_id": project_id,
                 "task_id": task_id,
-                "message": "图谱构建任务已启动，请通过 /task/{task_id} 查询进度"
+                "resumed": resuming,
+                "chunks_already_done": project.chunks_processed if resuming else 0,
+                "message": msg
             }
         })
         
