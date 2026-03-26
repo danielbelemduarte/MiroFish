@@ -203,7 +203,11 @@ def create_simulation():
             enable_twitter=data.get('enable_twitter', True),
             enable_reddit=data.get('enable_reddit', True),
         )
-        
+
+        # Save simulation_id to project for restart resilience
+        project.simulation_id = state.simulation_id
+        ProjectManager.save_project(project)
+
         return jsonify({
             "success": True,
             "data": state.to_dict()

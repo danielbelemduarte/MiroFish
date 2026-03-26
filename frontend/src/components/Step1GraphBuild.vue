@@ -214,9 +214,18 @@ const handleEnterEnvSetup = async () => {
     console.error('Missing project or graph info')
     return
   }
-  
+
+  // If project already has a simulation_id, navigate directly (resume after restart)
+  if (props.projectData.simulation_id) {
+    router.push({
+      name: 'Simulation',
+      params: { simulationId: props.projectData.simulation_id }
+    })
+    return
+  }
+
   creatingSimulation.value = true
-  
+
   try {
     const res = await createSimulation({
       project_id: props.projectData.project_id,
